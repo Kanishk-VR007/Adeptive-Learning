@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  # ============================================================================
+  # AdeptLearn FastAPI Backend Application
+  # ============================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: adeptlearn_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PROJECT_NAME=AdeptLearn
+      - ENVIRONMENT=production
+      - API_V1_STR=/api/v1
+      - DATABASE_URL=postgresql://adeptlearn:adeptlearn_secret_pwd@db:5432/adeptlearn_db
+      - SECRET_KEY=${SECRET_KEY:-adeptlearn_production_super_secret_jwt_key_2026_xyz}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+      - BACKEND_CORS_ORIGINS=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+      # Host networking mapping for local AI runtimes on host machine
+      - LM_STUDIO_BASE_URL=http://host.docker.internal:1234
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - LM_STUDIO_DEFAULT_MODEL=oreal-deepseek-r1-distill-qwen-7b
+      - OLLAMA_DEFAULT_MODEL=llama3.2:latest
+    extra_hosts:
+      # Allows backend container to access local GPU host model servers
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================================================
+  # PostgreSQL 16 Production Relational Database
+  # ============================================================================
+  db:
+    image: postgres:16-alpine
+    container_name: adeptlearn_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=adeptlearn
+      - POSTGRES_PASSWORD=adeptlearn_secret_pwd
+      - POSTGRES_DB=adeptlearn_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adeptlearn -d adeptlearn_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local

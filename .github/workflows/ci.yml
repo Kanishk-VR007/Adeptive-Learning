@@ -1,0 +1,71 @@
+name: Backend CI & Quality Gate
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-and-lint:
+    name: Backend Regression & Integration Suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: adeptlearn
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: adeptlearn_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-cov ruff psycopg2-binary
+
+      - name: Run Static Analysis & Linting
+        run: |
+          # Fast syntax, format and import linting
+          ruff check app tests
+
+      - name: Test Database Migrations
+        env:
+          DATABASE_URL: postgresql://adeptlearn:test_password@localhost:5432/adeptlearn_test
+        run: |
+          alembic upgrade head
+
+      - name: Execute Automated Test Suite (Mocks in CI)
+        env:
+          ENVIRONMENT: testing
+          SECRET_KEY: test_super_secret_jwt_key_ci_only_never_production
+          DATABASE_URL: sqlite:///:memory:
+        run: |
+          # Ignores live hardware RTX 4050 integration tests in CI environment
+          pytest --ignore=tests/test_ai_hardware_integration.py \
+                 --cov=app \
+                 --cov-report=term-missing \
+                 --cov-report=xml \
+                 -v
+
+      - name: Verify Health Probes
+        run: |
+          python -c "from app.main import app; print('FastAPI loaded successfully with routes:', len(app.routes))"
